@@ -14,10 +14,12 @@ def train(**kwargs):
     # 从配置文件获取opt，将参数赋值到对应的kwargs
     opt.parse(kwargs)
     # 指定env=opt.env,默认端口为8097,host为localhost
-    vis = Visualizer(param_groups.env)
+    vis = Visualizer(opt.env)
 
     # 步骤1：模型参数
     # 获取models中的opt.model属性值，决定采用何种网络
+    # model为网络结构，注意等式右边的括号，如果没有括号，则调用网络需要使用model()
+    model = getattr(models, opt.model)()
     # 如果有预训练好的网络，则采用之
     if opt.load_model_path:
         model.load(opt.load_model_path)
@@ -29,19 +31,21 @@ def train(**kwargs):
     # 使用自定义数据集类DogCat加载数据，使用train_data.__getitem__(index)获取对应索引的data和label
     train_data = DogCat(opt.train_data_root, train=True)
     # 使用PyTorch自带的utils.data中的DataLoader加载数据
-    train_dataloader = DataLoader(train_data, opt.batch_size,
-                                  shuffle=True, num_workers=opt.num_workers)
+    train_dataloader = DataLoader(
+        train_data, opt.batch_size, shuffle=True, num_workers=opt.num_workers)
     # 加载验证集数据
     val_data = DogCat(opt.train_data_root, train=False)
     # DataLoader是一个可迭代对象，可将dataset返回的每条数据拼接成一个batch，并提供多线程加速优化，当所有数据遍历完一次，对DataLoader完成一次迭代
-    val_dataloader = DataLoader(val_data, opt.batch_size, shuffle=False,
-                                num_workers=opt.num_workers)        # DataLoader提供对数据分批，打乱，使用多少子进程加载数据
+    # DataLoader提供对数据分批，打乱，使用多少子进程加载数据
+    val_dataloader = DataLoader(
+        val_data, opt.batch_size, shuffle=False, num_workers=opt.num_workers)
 
     # 步骤3：损失函数和优化器
     criterion = t.nn.CrossEntropyLoss()
     lr = opt.lr
     # 建立优化器，指定要调整的参数和学习率
-    optimizer = t.optim.Adam(model.parameters(), lr=lr, weight_decay=opt.weight_decay)
+    optimizer = t.optim.Adam(model.parameters(), lr=lr,
+                             weight_decay=opt.weight_decay)
 
     # 步骤4：meters
     loss_meter = meter.AverageValueMeter()        # 用于统计任意添加的方差和均值，可以用来测量平均损失
@@ -55,6 +59,9 @@ def train(**kwargs):
         loss_meter.reset()
         confusion_matrix.reset()
 
+        # tqdm:Python的进度条工具，输入为一个迭代器
+        # enumerate：对于一个可迭代的（iterable）/可遍历的对象（如列表、字符串），enumerate将其组成一个索引序列，利用它可以同时获得索引和值
+        # enumerate多用于在for循环中得到计数
         for ii, (data, label) in tqdm(enumerate(train_dataloader)):
             # 训练模型
 
@@ -156,8 +163,9 @@ def test(**kwargs):
 
     # 获取数据
     test_data = DogCat(opt.test_data_root, test=True)
-    test_dataloader = DataLoader(test_data, batch_size=opt.batch_size,
-                                 shuffle=False, num_workers=opt.num_workers)
+    test_dataloader = DataLoader(
+        test_data, batch_size=opt.batch_size, shuffle=False, num_workers=opt.num_workers)
+
     results = []
     for ii, (data, path) in tqdm(enumerate(test_dataloader)):
         input = t.autograd.Variable(data, volatile=True)
@@ -167,8 +175,12 @@ def test(**kwargs):
         # 计算测试集得分
         score = model(input)
         probability = t.nn.functional.softmax(score)[:, 0].data.tolist()
-
-        batch_results = [(path_, probability_) for path_, probability_ in zip(path, probability)]
+        if os.path.exists(opt.debug_file):
+            import ipdb
+            ipdb.set_trace()
+        # zip：将多个迭代器部分组合成一个元组，然后返回由元组组成的列表
+        batch_results = [(path_, probability_)
+                         for path_, probability_ in zip(path, probability)]
         results += batch_results
     # 将结果写入csv文件，文件名由opt.result_file指定
     write_csv(results, opt.result_file)
